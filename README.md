@@ -105,6 +105,14 @@ cycle, and streams cron job output to `docker logs`. The window
 restriction is enforced inside `collect_eta.py`, not the cron schedule,
 so the schedule itself stays a simple every-N-minutes rule.
 
+### Auto-deploy off `main` (self-hosted)
+
+`.github/workflows/deploy.yml` runs sanity checks, rebuilds the collector
+image, recreates the container, and re-runs the regression on every push
+to `main` — all on a GitHub Actions self-hosted runner on your own
+machine (no inbound network needed). Setup and day-to-day usage:
+[`docs/self-hosted-cicd.md`](docs/self-hosted-cicd.md).
+
 ## Running the regression engine
 
 On demand, any time after readings exist:

@@ -1,0 +1,103 @@
+name: deploy (self-hosted)
+
+# Runs on your own machine via a self-hosted runner. Triggers on every
+# push to main (i.e. a merge from develop), plus a manual button.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "docs/**"
+  workflow_dispatch:
+
+# Never let two deploys build/recreate the container at the same time.
+# Queue rather than cancel — a half-finished container recreate is worse
+# than waiting a minute.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 20
+
+    env:
+      IMAGE: eta-collector
+      CONTAINER: eta-collector
+      # Canonical clone on the host that holds .env + persistent data.
+      # Empty unless set as a repo Variable; the step below falls back to
+      # $HOME/ubi-crib-traffic.
+      ETA_REPO_DIR: ${{ vars.ETA_REPO_DIR }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve host paths
+        run: |
+          set -euo pipefail
+          ETA_REPO_DIR="${ETA_REPO_DIR:-$HOME/ubi-crib-traffic}"
+          echo "ETA_REPO_DIR=$ETA_REPO_DIR"            >> "$GITHUB_ENV"
+          echo "ETA_ENV_FILE=$ETA_REPO_DIR/.env"       >> "$GITHUB_ENV"
+          echo "ETA_DATA_DIR=$ETA_REPO_DIR/data"       >> "$GITHUB_ENV"
+          echo "TAG=${GITHUB_SHA::7}"                  >> "$GITHUB_ENV"
+          if [ ! -f "$ETA_REPO_DIR/.env" ]; then
+            echo "::error::no .env at $ETA_REPO_DIR/.env — create it from .env.example"
+            exit 1
+          fi
+
+      - name: Sanity checks
+        run: |
+          set -euo pipefail
+          python3 -m venv .ci-venv
+          ./.ci-venv/bin/pip install --quiet --upgrade pip
+          ./.ci-venv/bin/pip install --quiet -r requirements.txt
+          ./.ci-venv/bin/python -m compileall -q collector db regression
+          # --help fully imports each script (incl. db.db_client) but
+          # makes no API/DB calls.
+          ./.ci-venv/bin/python collector/collect_eta.py --help > /dev/null
+          ./.ci-venv/bin/python regression/train_and_evaluate.py --help > /dev/null
+          echo "sanity checks passed"
+
+      - name: Build image
+        run: |
+          set -euo pipefail
+          docker build -f collector/Dockerfile \
+            -t "$IMAGE:$TAG" -t "$IMAGE:latest" .
+
+      - name: Deploy collector
+        run: |
+          set -euo pipefail
+          chmod +x scripts/deploy.sh
+          scripts/deploy.sh
+          docker ps --filter "name=$CONTAINER" --format "  {{.Names}}  {{.Status}}  {{.Image}}"
+
+      - name: Run regression
+        run: |
+          set -euo pipefail
+          OUT="$ETA_DATA_DIR/regression-output"
+          mkdir -p "$OUT"
+          # For a relative-SQLite setup the live DB is the mounted file;
+          # point the host run at the same path. Anything else is taken
+          # from .env as-is.
+          set -a; . "$ETA_ENV_FILE"; set +a
+          case "${DATABASE_URL:-}" in
+            ""|sqlite:///./*|sqlite:///[!/]*)
+              export DATABASE_URL="sqlite:///$ETA_DATA_DIR/eta.db" ;;
+          esac
+          set +e
+          LOG="$(./.ci-venv/bin/python regression/train_and_evaluate.py --outdir "$OUT" 2>&1)"
+          RC=$?
+          set -e
+          echo "$LOG"
+          if [ $RC -ne 0 ]; then
+            if echo "$LOG" | grep -q "No readings found"; then
+              echo "::notice::regression skipped — no readings in the DB yet"
+            else
+              echo "::error::regression failed"
+              exit $RC
+            fi
+          else
+            echo "::notice::regression output written to $OUT"
+          fi
