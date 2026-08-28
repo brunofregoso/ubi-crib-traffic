@@ -54,14 +54,14 @@ trace both rush-hour humps.
 ## Setup
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # fill in GOOGLE_MAPS_API_KEY, HOME_COORDS, WORK_COORDS, DATABASE_URL
 ```
 
 `DATABASE_URL` defaults to a local SQLite file (`sqlite:///./eta.db`),
 which is enough for a single-machine personal setup. Point it at Postgres
-(`postgresql://user:pass@host:5432/dbname`) for anything long-running —
+(`postgresql+psycopg://user:pass@host:5432/dbname`) for anything long-running —
 the DB layer's interface doesn't change either way.
 
 ## Running the collector

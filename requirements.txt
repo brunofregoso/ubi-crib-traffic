@@ -1,8 +1,8 @@
 googlemaps==4.10.0
-python-dotenv==1.0.1
-SQLAlchemy==2.0.35
-psycopg2-binary==2.9.9
-pandas==2.2.3
-numpy==2.1.1
-scikit-learn==1.5.2
-matplotlib==3.9.2
+python-dotenv==1.2.3
+SQLAlchemy==2.0.52
+psycopg[binary]==3.3.4
+pandas==2.3.3
+numpy==2.5.2
+scikit-learn==1.9.0
+matplotlib==3.11.1
