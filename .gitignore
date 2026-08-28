@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.ci-venv/
+data/
 *.db
 regression/output/
 collector/env.sh
